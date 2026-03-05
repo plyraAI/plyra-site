@@ -1,0 +1,974 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Plyra — Something is watching.</title>
+<meta name="description" content="Action middleware for AI agents in production. Guard. Memory. Trace. Coming soon.">
+<link rel="icon" type="image/svg+xml" href="./favicon-32.svg">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Syne:wght@400;600;700;800&family=DM+Sans:ital,wght@0,300;0,400;0,500;1,300&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+*, *::before, *::after { margin: 0; padding: 0; box-sizing: border-box; }
+
+:root {
+  --void:      #060a0e;
+  --surface:   #0b1018;
+  --border:    #141e2a;
+  --teal:      #2dd4bf;
+  --teal-dark: #0d9488;
+  --amber:     #f59e0b;
+  --indigo:    #6366f1;
+  --chalk:     #e2eaf2;
+  --chalk-mid: #7a92a8;
+  --chalk-dim: #3e5468;
+  --syne:      'Syne', sans-serif;
+  --dm:        'DM Sans', sans-serif;
+  --mono:      'DM Mono', monospace;
+}
+
+html { background: var(--void); }
+
+body {
+  font-family: var(--dm);
+  background: var(--void);
+  color: var(--chalk);
+  overflow-x: hidden;
+  min-height: 100vh;
+  cursor: none;
+}
+
+/* ── CURSOR ───────────────────────────────────────────── */
+#cursor {
+  position: fixed;
+  width: 32px; height: 32px;
+  pointer-events: none;
+  z-index: 9999;
+  transform: translate(-50%, -50%);
+  transition: transform 0.06s ease;
+  filter: drop-shadow(0 0 12px rgba(45,212,191,0.3));
+}
+#cursor svg { width: 100%; height: 100%; }
+body:has(a:hover) #cursor,
+body:has(button:hover) #cursor {
+  transform: translate(-50%,-50%) scale(1.35);
+  filter: drop-shadow(0 0 20px rgba(45,212,191,0.5));
+}
+@media (pointer: coarse), (max-width: 768px) {
+  body { cursor: auto; }
+  #cursor { display: none; }
+}
+
+/* ── CANVAS / ATMOSPHERE ──────────────────────────────── */
+.atmosphere {
+  position: fixed; inset: 0;
+  z-index: 0;
+  overflow: hidden;
+}
+
+/* Dot grid */
+.dot-grid {
+  position: absolute; inset: 0;
+  background-image: radial-gradient(circle, rgba(45,212,191,0.07) 1px, transparent 1px);
+  background-size: 32px 32px;
+  mask-image: radial-gradient(ellipse 70% 70% at 50% 45%, black 20%, transparent 80%);
+  animation: grid-drift 20s linear infinite;
+}
+@keyframes grid-drift {
+  0% { background-position: 0 0; }
+  100% { background-position: 32px 32px; }
+}
+
+/* Radial glows */
+.glow-1 {
+  position: absolute;
+  width: 800px; height: 800px;
+  top: 50%; left: 50%;
+  transform: translate(-50%, -55%);
+  background: radial-gradient(circle, rgba(45,212,191,0.06) 0%, transparent 65%);
+  animation: breathe-glow 6s ease-in-out infinite;
+}
+.glow-2 {
+  position: absolute;
+  width: 600px; height: 600px;
+  top: 60%; left: 25%;
+  transform: translate(-50%, -50%);
+  background: radial-gradient(circle, rgba(99,102,241,0.04) 0%, transparent 60%);
+  animation: breathe-glow 8s ease-in-out infinite 2s;
+}
+.glow-3 {
+  position: absolute;
+  width: 500px; height: 500px;
+  top: 30%; left: 75%;
+  transform: translate(-50%, -50%);
+  background: radial-gradient(circle, rgba(245,158,11,0.025) 0%, transparent 55%);
+  animation: breathe-glow 7s ease-in-out infinite 4s;
+}
+@keyframes breathe-glow {
+  0%, 100% { opacity: 1; transform: translate(-50%,-50%) scale(1); }
+  50% { opacity: 0.5; transform: translate(-50%,-50%) scale(1.1); }
+}
+
+/* Noise overlay */
+.noise {
+  position: fixed; inset: 0;
+  z-index: 1;
+  pointer-events: none;
+  opacity: 0.03;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='256' height='256'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+  background-size: 256px;
+}
+
+/* Scan line (subtle) */
+.scanline {
+  position: fixed; inset: 0;
+  z-index: 2;
+  pointer-events: none;
+  background: repeating-linear-gradient(
+    0deg,
+    transparent,
+    transparent 2px,
+    rgba(45,212,191,0.008) 2px,
+    rgba(45,212,191,0.008) 4px
+  );
+}
+
+/* ── MAIN LAYOUT ──────────────────────────────────────── */
+.page {
+  position: relative;
+  z-index: 3;
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 40px 24px;
+}
+
+/* ── LOGO ─────────────────────────────────────────────── */
+.logo {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 72px;
+  opacity: 0;
+  animation: fade-down 0.8s cubic-bezier(0.16,1,0.3,1) 0.2s forwards;
+}
+.logo svg { filter: drop-shadow(0 0 16px rgba(45,212,191,0.2)); }
+.logo-text {
+  font-family: var(--syne);
+  font-weight: 800;
+  font-size: 22px;
+  color: var(--teal);
+  letter-spacing: -0.5px;
+}
+
+/* ── HERON STAGE ──────────────────────────────────────── */
+.heron-stage {
+  position: relative;
+  width: 220px; height: 250px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin-bottom: 64px;
+  opacity: 0;
+  animation: fade-up 1s cubic-bezier(0.16,1,0.3,1) 0.5s forwards;
+}
+
+.heron-ring {
+  position: absolute;
+  border-radius: 50%;
+  border: 1px solid rgba(45,212,191,0.08);
+}
+.heron-ring:nth-child(1) {
+  width: 160px; height: 160px;
+  animation: ring-pulse 4s ease-in-out infinite;
+}
+.heron-ring:nth-child(2) {
+  width: 240px; height: 240px;
+  animation: ring-pulse 4s ease-in-out infinite 0.8s;
+}
+.heron-ring:nth-child(3) {
+  width: 320px; height: 320px;
+  animation: ring-pulse 4s ease-in-out infinite 1.6s;
+}
+.heron-ring:nth-child(4) {
+  width: 400px; height: 400px;
+  animation: ring-pulse 4s ease-in-out infinite 2.4s;
+}
+@keyframes ring-pulse {
+  0%, 100% { transform: scale(1); opacity: 0.3; border-color: rgba(45,212,191,0.08); }
+  50% { transform: scale(1.03); opacity: 0.08; border-color: rgba(45,212,191,0.15); }
+}
+
+.heron-main {
+  position: relative;
+  z-index: 2;
+  width: 120px; height: 140px;
+  animation: heron-float 3.5s ease-in-out infinite;
+  filter: drop-shadow(0 12px 40px rgba(45,212,191,0.3));
+}
+@keyframes heron-float {
+  0%, 100% { transform: translateY(0) rotate(0deg); }
+  25% { transform: translateY(-10px) rotate(0.5deg); }
+  75% { transform: translateY(-4px) rotate(-0.5deg); }
+}
+
+/* ── HEADLINE ─────────────────────────────────────────── */
+.headline {
+  text-align: center;
+  margin-bottom: 24px;
+}
+.headline h1 {
+  font-family: var(--syne);
+  font-weight: 800;
+  font-size: clamp(36px, 6vw, 72px);
+  line-height: 0.93;
+  letter-spacing: -0.045em;
+  color: var(--chalk);
+}
+.headline .line {
+  display: block;
+  opacity: 0;
+}
+.headline .line:nth-child(1) { animation: line-in 0.7s cubic-bezier(0.16,1,0.3,1) 0.9s forwards; }
+.headline .line:nth-child(2) { animation: line-in 0.7s cubic-bezier(0.16,1,0.3,1) 1.05s forwards; }
+.headline .line:nth-child(3) { animation: line-in 0.7s cubic-bezier(0.16,1,0.3,1) 1.2s forwards; }
+.headline .teal { color: var(--teal); }
+
+@keyframes line-in {
+  from { opacity: 0; transform: translateY(20px); filter: blur(4px); }
+  to { opacity: 1; transform: none; filter: blur(0); }
+}
+
+/* ── SUBLINE ──────────────────────────────────────────── */
+.subline {
+  text-align: center;
+  font-size: 16px;
+  line-height: 1.7;
+  color: var(--chalk-mid);
+  font-weight: 300;
+  max-width: 460px;
+  margin-bottom: 48px;
+  opacity: 0;
+  animation: fade-up 0.7s ease 1.4s forwards;
+}
+
+/* ── PRODUCT TEASE PILLS ──────────────────────────────── */
+.pillars {
+  display: flex;
+  gap: 12px;
+  margin-bottom: 56px;
+  flex-wrap: wrap;
+  justify-content: center;
+  opacity: 0;
+  animation: fade-up 0.7s ease 1.6s forwards;
+}
+.pill {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-family: var(--mono);
+  font-size: 11px;
+  letter-spacing: 1.5px;
+  text-transform: uppercase;
+  padding: 8px 18px;
+  border-radius: 8px;
+  border: 1px solid;
+  position: relative;
+  overflow: hidden;
+  transition: all 0.3s ease;
+}
+.pill::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  opacity: 0;
+  transition: opacity 0.3s;
+}
+.pill:hover::before { opacity: 1; }
+.pill:hover { transform: translateY(-2px); }
+
+.pill-guard {
+  color: var(--teal);
+  border-color: rgba(45,212,191,0.25);
+  background: rgba(45,212,191,0.04);
+}
+.pill-guard::before { background: rgba(45,212,191,0.06); }
+.pill-guard:hover { border-color: rgba(45,212,191,0.5); box-shadow: 0 4px 24px rgba(45,212,191,0.1); }
+.pill-guard .dot { width: 6px; height: 6px; border-radius: 50%; background: var(--teal); box-shadow: 0 0 8px var(--teal); }
+
+.pill-memory {
+  color: var(--amber);
+  border-color: rgba(245,158,11,0.25);
+  background: rgba(245,158,11,0.04);
+}
+.pill-memory::before { background: rgba(245,158,11,0.06); }
+.pill-memory:hover { border-color: rgba(245,158,11,0.5); box-shadow: 0 4px 24px rgba(245,158,11,0.1); }
+.pill-memory .dot { width: 6px; height: 6px; border-radius: 50%; background: var(--amber); box-shadow: 0 0 8px var(--amber); }
+
+.pill-trace {
+  color: var(--indigo);
+  border-color: rgba(99,102,241,0.25);
+  background: rgba(99,102,241,0.04);
+}
+.pill-trace::before { background: rgba(99,102,241,0.06); }
+.pill-trace:hover { border-color: rgba(99,102,241,0.5); box-shadow: 0 4px 24px rgba(99,102,241,0.1); }
+.pill-trace .dot { width: 6px; height: 6px; border-radius: 50%; background: var(--indigo); box-shadow: 0 0 8px var(--indigo); }
+
+/* ── CODE TEASE ───────────────────────────────────────── */
+.code-tease {
+  width: 100%;
+  max-width: 480px;
+  margin-bottom: 56px;
+  opacity: 0;
+  animation: fade-up 0.7s ease 2.1s forwards;
+}
+.code-window {
+  background: rgba(11,16,24,0.8);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  overflow: hidden;
+  backdrop-filter: blur(8px);
+  box-shadow: 0 24px 80px rgba(0,0,0,0.4), 0 0 0 1px rgba(45,212,191,0.05);
+}
+.code-bar {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: 12px 16px;
+  border-bottom: 1px solid var(--border);
+  background: rgba(20,30,42,0.5);
+}
+.code-dot { width: 8px; height: 8px; border-radius: 50%; }
+.cd-r { background: #ff5f57; opacity: 0.7; }
+.cd-y { background: #febc2e; opacity: 0.7; }
+.cd-g { background: #28c840; opacity: 0.7; }
+.code-tab {
+  margin-left: 12px;
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--chalk-dim);
+  border-bottom: 1.5px solid var(--teal);
+  padding-bottom: 1px;
+}
+.code-body {
+  padding: 20px 24px;
+  font-family: var(--mono);
+  font-size: 12.5px;
+  line-height: 2;
+  overflow: hidden;
+}
+.code-body .ln {
+  color: var(--chalk-dim);
+  margin-right: 20px;
+  user-select: none;
+  opacity: 0.5;
+  display: inline-block;
+  width: 16px;
+  text-align: right;
+}
+.kw { color: #c792ea; }
+.fn { color: #82aaff; }
+.str { color: #c3e88d; }
+.dec { color: var(--amber); }
+.cm { color: #3e5468; font-style: italic; }
+
+/* Typing cursor blink */
+.type-cursor {
+  display: inline-block;
+  width: 8px; height: 16px;
+  background: var(--teal);
+  margin-left: 2px;
+  vertical-align: text-bottom;
+  animation: blink 1s step-end infinite;
+}
+@keyframes blink { 0%, 100% { opacity: 1; } 50% { opacity: 0; } }
+
+/* ── CTAs ─────────────────────────────────────────────── */
+.ctas {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  flex-wrap: wrap;
+  justify-content: center;
+  margin-bottom: 72px;
+  opacity: 0;
+  animation: fade-up 0.7s ease 2.1s forwards;
+}
+.btn-primary {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  background: var(--teal);
+  color: var(--void);
+  font-size: 14px;
+  font-weight: 600;
+  font-family: var(--dm);
+  padding: 14px 32px;
+  border-radius: 10px;
+  text-decoration: none;
+  border: none;
+  transition: all 0.25s cubic-bezier(0.16,1,0.3,1);
+  box-shadow: 0 4px 24px rgba(45,212,191,0.2), 0 0 0 1px rgba(45,212,191,0.3);
+  position: relative;
+  overflow: hidden;
+}
+.btn-primary::after {
+  content: '';
+  position: absolute; inset: 0;
+  background: linear-gradient(90deg, transparent, rgba(255,255,255,0.2), transparent);
+  transform: translateX(-100%);
+  transition: transform 0.5s ease;
+}
+.btn-primary:hover::after { transform: translateX(100%); }
+.btn-primary:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 8px 40px rgba(45,212,191,0.3), 0 0 0 1px rgba(45,212,191,0.5);
+}
+.btn-primary .arrow { transition: transform 0.2s; }
+.btn-primary:hover .arrow { transform: translateX(3px); }
+
+.btn-ghost {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--chalk-mid);
+  font-size: 14px;
+  font-weight: 400;
+  font-family: var(--dm);
+  padding: 14px 28px;
+  border-radius: 10px;
+  text-decoration: none;
+  border: 1px solid var(--border);
+  background: transparent;
+  transition: all 0.25s ease;
+}
+.btn-ghost:hover {
+  border-color: var(--chalk-dim);
+  color: var(--chalk);
+  background: rgba(255,255,255,0.03);
+}
+
+/* ── FOOTER ───────────────────────────────────────────── */
+.footer {
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--chalk-dim);
+  letter-spacing: 0.5px;
+  text-align: center;
+  opacity: 0;
+  animation: fade-up 0.5s ease 2.4s forwards;
+}
+.footer a {
+  color: var(--teal);
+  text-decoration: none;
+  transition: opacity 0.2s;
+}
+.footer a:hover { opacity: 0.7; }
+
+/* ── FLOATING CODE FRAGMENTS ──────────────────────────── */
+.fragments {
+  position: fixed;
+  inset: 0;
+  z-index: 2;
+  pointer-events: none;
+  overflow: hidden;
+}
+.frag {
+  position: absolute;
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--chalk-dim);
+  opacity: 0;
+  white-space: nowrap;
+  animation: frag-drift 18s linear infinite;
+}
+@keyframes frag-drift {
+  0%   { opacity: 0; transform: translateY(20px); }
+  8%   { opacity: 0.12; }
+  85%  { opacity: 0.12; }
+  100% { opacity: 0; transform: translateY(-100vh); }
+}
+.frag:nth-child(1)  { left: 5%;  top: 95%; animation-delay: 0s; animation-duration: 22s; }
+.frag:nth-child(2)  { left: 15%; top: 90%; animation-delay: 3s; animation-duration: 20s; }
+.frag:nth-child(3)  { left: 78%; top: 92%; animation-delay: 7s; animation-duration: 24s; }
+.frag:nth-child(4)  { left: 60%; top: 88%; animation-delay: 11s; animation-duration: 19s; }
+.frag:nth-child(5)  { left: 88%; top: 94%; animation-delay: 5s; animation-duration: 21s; }
+.frag:nth-child(6)  { left: 35%; top: 96%; animation-delay: 9s; animation-duration: 23s; }
+.frag:nth-child(7)  { left: 50%; top: 91%; animation-delay: 14s; animation-duration: 25s; }
+.frag:nth-child(8)  { left: 3%;  top: 93%; animation-delay: 17s; animation-duration: 20s; }
+.frag:nth-child(9)  { left: 92%; top: 89%; animation-delay: 2s; animation-duration: 22s; }
+.frag:nth-child(10) { left: 42%; top: 95%; animation-delay: 12s; animation-duration: 18s; }
+
+/* ── ANIMATION UTILITIES ──────────────────────────────── */
+@keyframes fade-up {
+  from { opacity: 0; transform: translateY(16px); }
+  to   { opacity: 1; transform: none; }
+}
+@keyframes fade-down {
+  from { opacity: 0; transform: translateY(-12px); }
+  to   { opacity: 1; transform: none; }
+}
+
+/* ── RESPONSIVE ───────────────────────────────────────── */
+@media (max-width: 600px) {
+  .pillars { gap: 8px; }
+  .pill { padding: 6px 14px; font-size: 10px; }
+  .code-body { font-size: 11px; padding: 16px 16px; }
+  .heron-stage { width: 180px; height: 200px; margin-bottom: 48px; }
+  .heron-main { width: 90px; height: 105px; }
+  .heron-ring:nth-child(3),
+  .heron-ring:nth-child(4) { display: none; }
+  .ctas { flex-direction: column; }
+  .btn-primary, .btn-ghost { width: 100%; justify-content: center; }
+  .logo { margin-bottom: 48px; }
+}
+
+/* ── SELECTION ────────────────────────────────────────── */
+::selection { background: rgba(45,212,191,0.25); color: var(--chalk); }
+::-webkit-scrollbar { width: 0; }
+/* ── WAITLIST FORM ────────────────────────────────────────── */
+.form-wrap {
+  width: 100%;
+  max-width: 440px;
+  margin-bottom: 72px;
+  opacity: 0;
+  animation: fade-up 0.7s ease 1.8s forwards;
+}
+.form-label {
+  display: block;
+  text-align: center;
+  font-size: 12px;
+  color: var(--chalk-dim);
+  letter-spacing: 1px;
+  text-transform: uppercase;
+  margin-bottom: 16px;
+  font-family: var(--mono);
+}
+.form-row {
+  display: flex;
+  gap: 10px;
+}
+.email-input {
+  flex: 1;
+  background: rgba(11,16,24,0.8);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 14px 18px;
+  font-size: 14px;
+  font-family: var(--dm);
+  color: var(--chalk);
+  outline: none;
+  transition: all 0.25s ease;
+  backdrop-filter: blur(8px);
+}
+.email-input::placeholder { color: var(--chalk-dim); }
+.email-input:focus {
+  border-color: rgba(45,212,191,0.4);
+  box-shadow: 0 0 0 3px rgba(45,212,191,0.08);
+  background: rgba(11,16,24,0.95);
+}
+.email-input.error {
+  border-color: rgba(239,68,68,0.5);
+  box-shadow: 0 0 0 3px rgba(239,68,68,0.08);
+}
+.btn-submit {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  background: var(--teal);
+  color: var(--void);
+  font-size: 14px;
+  font-weight: 600;
+  font-family: var(--dm);
+  padding: 14px 24px;
+  border-radius: 10px;
+  border: none;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: all 0.25s cubic-bezier(0.16,1,0.3,1);
+  box-shadow: 0 4px 24px rgba(45,212,191,0.2), 0 0 0 1px rgba(45,212,191,0.3);
+  position: relative;
+  overflow: hidden;
+  min-width: 148px;
+}
+.btn-submit::after {
+  content: '';
+  position: absolute; inset: 0;
+  background: linear-gradient(90deg, transparent, rgba(255,255,255,0.18), transparent);
+  transform: translateX(-100%);
+  transition: transform 0.5s ease;
+}
+.btn-submit:hover::after { transform: translateX(100%); }
+.btn-submit:hover:not(:disabled) {
+  transform: translateY(-2px);
+  box-shadow: 0 8px 40px rgba(45,212,191,0.3), 0 0 0 1px rgba(45,212,191,0.5);
+}
+.btn-submit:disabled { opacity: 0.65; cursor: not-allowed; }
+.btn-submit .btn-arrow { transition: transform 0.2s; }
+.btn-submit:hover:not(:disabled) .btn-arrow { transform: translateX(3px); }
+.spinner {
+  width: 14px; height: 14px;
+  border: 2px solid rgba(6,10,14,0.3);
+  border-top-color: var(--void);
+  border-radius: 50%;
+  animation: spin 0.65s linear infinite;
+  display: none;
+}
+.btn-submit.loading .spinner { display: block; }
+.btn-submit.loading .btn-label,
+.btn-submit.loading .btn-arrow { display: none; }
+@keyframes spin { to { transform: rotate(360deg); } }
+.form-message {
+  margin-top: 14px;
+  text-align: center;
+  font-size: 13px;
+  border-radius: 8px;
+  padding: 10px 16px;
+  display: none;
+  font-family: var(--dm);
+  line-height: 1.5;
+}
+.form-message.success {
+  display: block;
+  color: var(--teal);
+  background: rgba(45,212,191,0.08);
+  border: 1px solid rgba(45,212,191,0.2);
+}
+.form-message.error {
+  display: block;
+  color: #f87171;
+  background: rgba(239,68,68,0.08);
+  border: 1px solid rgba(239,68,68,0.2);
+}
+@media (max-width: 600px) {
+  .form-row { flex-direction: column; }
+  .btn-submit { width: 100%; }
+}</style>
+</head>
+<body>
+
+<!-- Cursor -->
+<div id="cursor">
+  <svg viewBox="0 -12 64 96" fill="none" xmlns="http://www.w3.org/2000/svg">
+    <polygon points="32,8 52,30 44,60 20,60 12,30" fill="#2dd4bf" opacity="0.9"/>
+    <polygon points="20,28 2,50 20,54 28,34" fill="#1a9e8f"/>
+    <polygon points="44,28 62,50 44,54 36,34" fill="#1a9e8f"/>
+    <polygon points="28,8 36,8 38,24 26,24" fill="#2dd4bf"/>
+    <ellipse cx="32" cy="6" rx="7" ry="7" fill="#2dd4bf"/>
+    <ellipse cx="35" cy="5" rx="2.5" ry="2.5" fill="#0a0e13"/>
+    <polygon points="38,4 52,6 38,8" fill="#f59e0b"/>
+  </svg>
+</div>
+
+<!-- Atmosphere -->
+<div class="atmosphere">
+  <div class="dot-grid"></div>
+  <div class="glow-1"></div>
+  <div class="glow-2"></div>
+  <div class="glow-3"></div>
+</div>
+<div class="noise"></div>
+<div class="scanline"></div>
+
+<!-- Floating code fragments -->
+<div class="fragments">
+  <span class="frag"><span class="kw">from</span> plyra_guard <span class="kw">import</span> ActionGuard</span>
+  <span class="frag">guard.<span class="fn">protect</span>(<span class="str">"file.write"</span>)</span>
+  <span class="frag"><span class="cm"># every tool call, governed.</span></span>
+  <span class="frag">risk_level=RiskLevel.<span class="fn">HIGH</span></span>
+  <span class="frag">memory.<span class="fn">recall</span>(<span class="str">"previous context"</span>)</span>
+  <span class="frag"><span class="kw">await</span> trace.<span class="fn">record</span>(span)</span>
+  <span class="frag"><span class="dec">@guard.protect</span>(<span class="str">"db.delete"</span>)</span>
+  <span class="frag">action: <span class="fn">ALLOW</span> | <span class="fn">DENY</span> | <span class="fn">ESCALATE</span></span>
+  <span class="frag">memory.<span class="fn">remember</span>(<span class="str">"agent learned"</span>)</span>
+  <span class="frag"><span class="cm"># &lt;2ms overhead. measure it.</span></span>
+</div>
+
+<!-- Page -->
+<div class="page">
+
+  <!-- Logo -->
+  <div class="logo">
+    <svg width="28" height="28" viewBox="0 -12 64 96" fill="none">
+      <polygon points="32,8 52,30 44,60 20,60 12,30" fill="#2dd4bf" opacity="0.9"/>
+      <polygon points="20,28 2,50 20,54 28,34" fill="#1a9e8f"/>
+      <polygon points="44,28 62,50 44,54 36,34" fill="#1a9e8f"/>
+      <polygon points="28,8 36,8 38,24 26,24" fill="#2dd4bf"/>
+      <ellipse cx="32" cy="6" rx="7" ry="7" fill="#2dd4bf"/>
+      <ellipse cx="35" cy="5" rx="2.5" ry="2.5" fill="#0a0e13"/>
+      <polygon points="38,4 52,6 38,8" fill="#f59e0b"/>
+    </svg>
+    <span class="logo-text">plyra</span>
+  </div>
+
+  <!-- Heron -->
+  <div class="heron-stage">
+    <div class="heron-ring"></div>
+    <div class="heron-ring"></div>
+    <div class="heron-ring"></div>
+    <div class="heron-ring"></div>
+    <svg class="heron-main" viewBox="0 -12 64 96" fill="none">
+      <polygon points="32,8 52,30 44,60 20,60 12,30" fill="#2dd4bf" opacity="0.92"/>
+      <polygon points="20,28 2,50 20,54 28,34" fill="#1a9e8f"/>
+      <polygon points="44,28 62,50 44,54 36,34" fill="#1a9e8f"/>
+      <polygon points="28,8 36,8 38,24 26,24" fill="#2dd4bf"/>
+      <ellipse cx="32" cy="6" rx="7" ry="7" fill="#2dd4bf"/>
+      <ellipse cx="35" cy="5" rx="2.5" ry="2.5" fill="#0a0e13"/>
+      <polygon points="38,4 52,6 38,8" fill="#f59e0b"/>
+      <line x1="26" y1="60" x2="22" y2="76" stroke="#2dd4bf" stroke-width="3.5" stroke-linecap="round"/>
+      <line x1="38" y1="60" x2="42" y2="76" stroke="#2dd4bf" stroke-width="3.5" stroke-linecap="round"/>
+      <polygon points="27,1 22,-5 25,4" fill="#2dd4bf" opacity="0.6"/>
+      <polygon points="30,0 26,-7 28,3" fill="#2dd4bf" opacity="0.4"/>
+      <polygon points="33,0 36,-5 34,4" fill="#2dd4bf" opacity="0.45"/>
+    </svg>
+  </div>
+
+  <!-- Headline -->
+  <div class="headline">
+    <h1>
+      <span class="line">Something is</span>
+      <span class="line teal">watching</span>
+      <span class="line">your agents.</span>
+    </h1>
+  </div>
+
+  <!-- Subline -->
+  <p class="subline">
+    Action middleware for AI agents in production.<br>
+    Intercept every tool call. Enforce policy. Remember everything.
+  </p>
+
+  <!-- Product pillars -->
+  <div class="pillars">
+    <div class="pill pill-guard">
+      <span class="dot"></span>
+      Guard
+    </div>
+    <div class="pill pill-memory">
+      <span class="dot"></span>
+      Memory
+    </div>
+    <div class="pill pill-trace">
+      <span class="dot"></span>
+      Trace
+    </div>
+  </div>
+
+  <!-- Waitlist form -->
+  <div class="form-wrap">
+    <span class="form-label">Get notified before launch.</span>
+    <form id="waitlist-form" class="form-row" novalidate>
+      <input
+        type="email"
+        id="email-input"
+        class="email-input"
+        name="email"
+        placeholder="your@email.com"
+        required
+        autocomplete="email"
+        spellcheck="false"
+      />
+      <button type="submit" class="btn-submit" id="submit-btn">
+        <span class="btn-label">Get Notified</span>
+        <span class="btn-arrow">→</span>
+        <span class="spinner"></span>
+      </button>
+    </form>
+    <div class="form-message" id="form-message"></div>
+  </div>
+
+  <!-- Code tease -->
+  <div class="code-tease">
+    <div class="code-window">
+      <div class="code-bar">
+        <span class="code-dot cd-r"></span>
+        <span class="code-dot cd-y"></span>
+        <span class="code-dot cd-g"></span>
+        <span class="code-tab">agent.py</span>
+      </div>
+      <div class="code-body">
+        <div><span class="ln">1</span><span class="kw">from</span> <span class="fn">plyra_guard</span> <span class="kw">import</span> ActionGuard</div>
+        <div><span class="ln">2</span><span class="kw">from</span> <span class="fn">plyra_memory</span> <span class="kw">import</span> Memory</div>
+        <div><span class="ln">3</span></div>
+        <div><span class="ln">4</span><span class="dec">@guard.protect</span>(<span class="str">"file.write"</span>)</div>
+        <div><span class="ln">5</span><span class="kw">async def</span> <span class="fn">write_report</span>(content, path):<span class="type-cursor"></span></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Footer -->
+  <div class="footer">
+    <p>© 2026 Plyra &nbsp;·&nbsp; <a href="mailto:hello@plyra.dev">hello@plyra.dev</a></p>
+  </div>
+
+</div>
+
+<script>
+// ── Heron cursor with rotation ──
+const cursor = document.getElementById('cursor');
+let mx = 0, my = 0, cx = 0, cy = 0, angle = 0;
+
+document.addEventListener('mousemove', e => { mx = e.clientX; my = e.clientY; });
+
+function tick() {
+  const dx = mx - cx, dy = my - cy;
+  cx += dx * 0.1;
+  cy += dy * 0.1;
+  const speed = Math.sqrt(dx * dx + dy * dy);
+  if (speed > 1.5) {
+    const target = Math.atan2(dy, dx) * (180 / Math.PI) + 90;
+    let diff = target - angle;
+    if (diff > 180) diff -= 360;
+    if (diff < -180) diff += 360;
+    angle += diff * 0.12;
+  }
+  cursor.style.left = cx + 'px';
+  cursor.style.top = cy + 'px';
+  cursor.style.transform = `translate(-50%,-50%) rotate(${angle}deg)`;
+  requestAnimationFrame(tick);
+}
+tick();
+
+// ── Typing effect in code block ──
+const lines = [
+  { ln: 6, text: '    context = <span class="kw">await</span> memory.<span class="fn">recall</span>(<span class="str">"report format"</span>)' },
+  { ln: 7, text: '    result = <span class="kw">await</span> fs.<span class="fn">write</span>(path, content)' },
+  { ln: 8, text: '    <span class="kw">await</span> memory.<span class="fn">remember</span>(<span class="str">f"Wrote {path}"</span>)' },
+  { ln: 9, text: '    <span class="kw">return</span> result' },
+];
+
+const codeBody = document.querySelector('.code-body');
+let lineIdx = 0;
+
+function typeNextLine() {
+  if (lineIdx >= lines.length) {
+    // Remove cursor from last static line
+    const cursorEl = codeBody.querySelector('.type-cursor');
+    if (cursorEl) cursorEl.remove();
+    // Restart after pause
+    setTimeout(() => {
+      // Remove typed lines
+      const typed = codeBody.querySelectorAll('.typed-line');
+      typed.forEach(el => el.remove());
+      // Re-add cursor to line 5
+      const lastStatic = codeBody.querySelector('div:last-child');
+      if (lastStatic && !lastStatic.querySelector('.type-cursor')) {
+        lastStatic.innerHTML = lastStatic.innerHTML + '<span class="type-cursor"></span>';
+      }
+      lineIdx = 0;
+      setTimeout(typeNextLine, 1200);
+    }, 4000);
+    return;
+  }
+
+  // Remove cursor from previous element
+  const existingCursor = codeBody.querySelector('.type-cursor');
+  if (existingCursor) existingCursor.remove();
+
+  const { ln, text } = lines[lineIdx];
+  const div = document.createElement('div');
+  div.classList.add('typed-line');
+  div.style.opacity = '0';
+  div.style.transform = 'translateX(-4px)';
+  div.style.transition = 'all 0.3s ease';
+  div.innerHTML = `<span class="ln">${ln}</span>${text}<span class="type-cursor"></span>`;
+  codeBody.appendChild(div);
+
+  requestAnimationFrame(() => {
+    div.style.opacity = '1';
+    div.style.transform = 'none';
+  });
+
+  lineIdx++;
+  setTimeout(typeNextLine, 700 + Math.random() * 400);
+}
+
+setTimeout(typeNextLine, 3200);
+
+// ── Waitlist form ──────────────────────────────────────────
+const waitlistForm  = document.getElementById('waitlist-form');
+const emailInput    = document.getElementById('email-input');
+const submitBtn     = document.getElementById('submit-btn');
+const formMessage   = document.getElementById('form-message');
+
+function setFormState(state, message) {
+  formMessage.className = 'form-message';
+  formMessage.textContent = '';
+
+  if (state === 'loading') {
+    submitBtn.disabled = true;
+    submitBtn.classList.add('loading');
+    emailInput.disabled = true;
+    emailInput.classList.remove('error');
+
+  } else if (state === 'success') {
+    submitBtn.disabled = true;
+    submitBtn.classList.remove('loading');
+    emailInput.disabled = true;
+    formMessage.classList.add('success');
+    formMessage.textContent = message;
+
+  } else if (state === 'error') {
+    submitBtn.disabled = false;
+    submitBtn.classList.remove('loading');
+    emailInput.disabled = false;
+    emailInput.classList.add('error');
+    formMessage.classList.add('error');
+    formMessage.textContent = message;
+
+  } else {
+    // reset
+    submitBtn.disabled = false;
+    submitBtn.classList.remove('loading');
+    emailInput.disabled = false;
+    emailInput.classList.remove('error');
+  }
+}
+
+emailInput && emailInput.addEventListener('input', () => {
+  emailInput.classList.remove('error');
+  formMessage.className = 'form-message';
+});
+
+waitlistForm && waitlistForm.addEventListener('submit', async (e) => {
+  e.preventDefault();
+
+  const email = emailInput.value.trim();
+  if (!email) {
+    setFormState('error', 'Please enter your email address.');
+    emailInput.focus();
+    return;
+  }
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+    setFormState('error', 'Please enter a valid email address.');
+    emailInput.focus();
+    return;
+  }
+
+  setFormState('loading');
+
+  try {
+    const res = await fetch('/api/notify', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email }),
+    });
+
+    const data = await res.json().catch(() => ({}));
+
+    if (res.ok && data.success) {
+      setFormState('success', "Thanks! We'll notify you before launch.");
+    } else {
+      setFormState('error', data.error || 'Something went wrong. Please try again.');
+    }
+  } catch (_) {
+    setFormState('error', 'Network error. Please check your connection.');
+  }
+});
+</script>
+</body>
+</html>
