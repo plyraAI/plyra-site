@@ -6,6 +6,14 @@
       "dest": "/api/notify.js"
     },
     {
+      "src": "/favicon-32\\.svg",
+      "dest": "/favicon-32.svg"
+    },
+    {
+      "src": "/(.*\\.(ico|png|jpg|jpeg|gif|svg|webp|css|js|json|txt|woff|woff2|ttf))",
+      "dest": "/$1"
+    },
+    {
       "src": "/(.*)",
       "dest": "/index.html"
     }
